@@ -2,69 +2,92 @@ import type { LayoutMode } from "../../core/types";
 import type { MenuEntry, MenuId } from "../components/chrome/menu";
 
 export interface BuildAppMenusOptions {
+  canFullFileMode: boolean;
   canRefreshCurrentInput: boolean;
+  copyDecorations: boolean;
   focusFilter: () => void;
+  fullFileMode: boolean;
+  gitActionsAvailable: boolean;
   layoutMode: LayoutMode;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToHunk: (delta: number) => void;
+  openAgentSkill: () => void;
+  openThemeSelector: () => void;
   refreshCurrentInput: () => void;
+  renderSidebar: boolean;
   requestQuit: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
-  openThemeSelector: () => void;
-  copyDecorations: boolean;
   showAgentNotes: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
   showMenuBar: boolean;
-  renderSidebar: boolean;
-  toggleCopyDecorations: () => void;
   toggleAgentNotes: () => void;
+  toggleCopyDecorations: () => void;
   toggleFocusArea: () => void;
-  openAgentSkill: () => void;
+  toggleFullFileMode: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
-  toggleMenuBar: () => void;
   toggleLineWrap: () => void;
+  toggleMenuBar: () => void;
   toggleSidebar: () => void;
+  triggerDiscardSelectedFile: () => void;
   triggerEditSelectedFile: () => void;
+  triggerOpenLazygit: () => void;
+  triggerReloadAfterGitAction: () => void;
+  triggerStageSelectedFile: () => void;
+  triggerUnstageSelectedFile: () => void;
   wrapLines: boolean;
 }
 
 /** Build the top-level app menus from the current app state and actions. */
 export function buildAppMenus({
+  canFullFileMode,
   canRefreshCurrentInput,
+  copyDecorations,
   focusFilter,
+  fullFileMode,
+  gitActionsAvailable,
   layoutMode,
   moveToAnnotatedFile,
   moveToAnnotatedHunk,
   moveToHunk,
+  openAgentSkill,
+  openThemeSelector,
   refreshCurrentInput,
+  renderSidebar,
   requestQuit,
   selectLayoutMode,
-  openThemeSelector,
-  copyDecorations,
   showAgentNotes,
   showHelp,
   showHunkHeaders,
   showLineNumbers,
   showMenuBar,
-  renderSidebar,
-  toggleCopyDecorations,
   toggleAgentNotes,
+  toggleCopyDecorations,
   toggleFocusArea,
-  openAgentSkill,
+  toggleFullFileMode,
   toggleHelp,
   toggleHunkHeaders,
   toggleLineNumbers,
-  toggleMenuBar,
   toggleLineWrap,
+  toggleMenuBar,
   toggleSidebar,
+  triggerDiscardSelectedFile,
   triggerEditSelectedFile,
+  triggerOpenLazygit,
+  triggerReloadAfterGitAction,
+  triggerStageSelectedFile,
+  triggerUnstageSelectedFile,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
+  // gitActionsAvailable is plumbed through so future per-session gating can flip
+  // menu items off without the call site having to drop them. The current
+  // implementation always enables the items; the flag is wired but inactive.
+  void gitActionsAvailable;
+
   const fileMenuEntries: MenuEntry[] = [
     {
       kind: "item",
@@ -186,6 +209,22 @@ export function buildAppMenus({
         checked: copyDecorations,
         action: toggleCopyDecorations,
       },
+      { kind: "separator" },
+      {
+        kind: "item",
+        label: "View full file",
+        hint: "V",
+        checked: fullFileMode,
+        // canFullFileMode is plumbed for callers that want to disable the
+        // toggle when no file in the current review has a source fetcher.
+        // The action is still wired so the menu state stays consistent if
+        // the user selects the item while no source is available.
+        action: () => {
+          if (canFullFileMode) {
+            toggleFullFileMode();
+          }
+        },
+      },
     ],
     navigate: [
       {
@@ -219,6 +258,43 @@ export function buildAppMenus({
         label: "Focus filter",
         hint: "/",
         action: focusFilter,
+      },
+    ],
+    git: [
+      {
+        kind: "item",
+        label: "Open lazygit",
+        hint: "Ctrl+L",
+        action: triggerOpenLazygit,
+      },
+      { kind: "separator" },
+      {
+        kind: "item",
+        label: "Stage file",
+        hint: "g s",
+        action: () => {
+          triggerStageSelectedFile();
+          // Reload after the action so the diff reflects the new index state.
+          triggerReloadAfterGitAction();
+        },
+      },
+      {
+        kind: "item",
+        label: "Unstage file",
+        hint: "g u",
+        action: () => {
+          triggerUnstageSelectedFile();
+          triggerReloadAfterGitAction();
+        },
+      },
+      {
+        kind: "item",
+        label: "Discard worktree changes",
+        hint: "g d",
+        action: () => {
+          triggerDiscardSelectedFile();
+          triggerReloadAfterGitAction();
+        },
       },
     ],
     agent: [

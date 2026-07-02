@@ -20,14 +20,18 @@ import {
 } from "./diff/codeColumns";
 import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
+import { applyFullFileOverlay, useFullFileOverlay } from "./hooks/useFullFileOverlay";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController } from "./hooks/useReviewController";
 import { buildAppMenus } from "./lib/appMenus";
+import { isAnyFileFullFileAvailable } from "./lib/fullFileAvailability";
 import { fileRowId } from "./lib/ids";
+import { openLazygit } from "./lib/openInLazygit";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
+import { runFileGitAction } from "./lib/runFileGitAction";
 import { availableThemes, resolveTheme, withTransparentBackground } from "./themes";
 
 type FocusArea = "files" | "filter" | "note";
@@ -181,7 +185,26 @@ export function App({
       })),
     [activeTheme.id, themeOptions],
   );
-  const review = useReviewController({ files: bootstrap.changeset.files });
+  // Full-file overlay: when active, every file with a `sourceFetcher` is replaced
+  // with a synthesized full-file diff built from its per-side source text. The
+  // overlay is opt-in (View → View full file) and the result feeds the review
+  // controller in place of the raw diff stream.
+  const fullFileOverlay = useFullFileOverlay(bootstrap.changeset.files);
+  const canFullFileMode = useMemo(
+    () => isAnyFileFullFileAvailable(bootstrap.changeset.files),
+    [bootstrap.changeset.files],
+  );
+  const effectiveFiles = useMemo(
+    () => applyFullFileOverlay(bootstrap.changeset.files, fullFileOverlay),
+    [bootstrap.changeset.files, fullFileOverlay],
+  );
+  const toggleFullFileMode = useCallback(() => {
+    if (!canFullFileMode) {
+      return;
+    }
+    fullFileOverlay.setEnabled(!fullFileOverlay.enabled);
+  }, [canFullFileMode, fullFileOverlay]);
+  const review = useReviewController({ files: effectiveFiles });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
@@ -197,7 +220,70 @@ export function App({
     },
     [review.selectFile],
   );
+  /**
+   * Move to the next file whose display name starts with `letter`. Repeated
+   * presses of the same letter cycle through matches. Returns true when a
+   * file was selected so the caller can decide whether to swallow the key.
+   */
+  const lastLetterJumpRef = useRef<{ letter: string; targetId: string } | null>(null);
+  const jumpToFileByLetter = useCallback(
+    (letter: string): boolean => {
+      const lower = letter.toLowerCase();
+      const files = filteredFiles;
+      if (files.length === 0) {
+        return false;
+      }
+      // Resume from after the previously-jumped file so the next press of the
+      // same letter cycles to the next match instead of re-selecting the same one.
+      const last = lastLetterJumpRef.current;
+      const resumeFromIndex =
+        last && last.letter === lower ? files.findIndex((file) => file.id === last.targetId) : -1;
+      const startIndex = resumeFromIndex >= 0 ? resumeFromIndex + 1 : 0;
+      for (let offset = 0; offset < files.length; offset += 1) {
+        const index = (startIndex + offset) % files.length;
+        const file = files[index];
+        if (!file) {
+          continue;
+        }
+        const firstChar = file.path
+          .slice(file.path.lastIndexOf("/") + 1)
+          .charAt(0)
+          .toLowerCase();
+        if (firstChar === lower) {
+          jumpToFile(file.id, 0, { alignFileHeaderTop: true });
+          lastLetterJumpRef.current = { letter: lower, targetId: file.id };
+          return true;
+        }
+      }
+      // No file starts with the requested letter; reset the cycle anchor.
+      lastLetterJumpRef.current = null;
+      return false;
+    },
+    [filteredFiles, jumpToFile],
+  );
 
+  /** Step to the adjacent visible file. Used by the J/K shortcuts. */
+  const jumpToAdjacentFile = useCallback(
+    (delta: -1 | 1) => {
+      const files = filteredFiles;
+      if (files.length === 0) {
+        return;
+      }
+      const currentIndex = files.findIndex((file) => file.id === selectedFile?.id);
+      const nextIndex =
+        currentIndex < 0
+          ? delta > 0
+            ? 0
+            : files.length - 1
+          : Math.max(0, Math.min(files.length - 1, currentIndex + delta));
+      const next = files[nextIndex];
+      if (!next) {
+        return;
+      }
+      jumpToFile(next.id, 0, { alignFileHeaderTop: true });
+    },
+    [filteredFiles, jumpToFile, selectedFile],
+  );
   const openAgentNotes = useCallback(() => {
     setShowAgentNotes(true);
   }, []);
@@ -560,6 +646,93 @@ export function App({
     });
   }, [refreshCurrentInput]);
 
+  const triggerOpenLazygit = useCallback(() => {
+    // Lazygit requires a repo root; we only enable the action when one is reachable.
+    if (!bootstrap.repoRoot) {
+      showSessionNotice("Lazygit needs a git repository.");
+      return;
+    }
+    const result = openLazygit({ cwd: bootstrap.repoRoot, renderer });
+    if (result.launchError) {
+      showSessionNotice(`Lazygit failed to launch: ${result.launchError}`);
+      return;
+    }
+    if (result.exitCode !== 0) {
+      showSessionNotice(`Lazygit exited with status ${result.exitCode}.`);
+    }
+    // Lazygit may have changed the worktree or index; re-read the current review
+    // so the diff stream reflects the new state.
+    if (canRefreshCurrentInput) {
+      triggerRefreshCurrentInput();
+    }
+  }, [bootstrap.repoRoot, canRefreshCurrentInput, renderer, triggerRefreshCurrentInput]);
+
+  const triggerStageSelectedFile = useCallback(() => {
+    const feedback = runFileGitAction({
+      file: selectedFile,
+      kind: "stage",
+      repoRoot: bootstrap.repoRoot,
+    });
+    const result = feedback.result;
+    if (!result) {
+      return;
+    }
+    if (result.launchError) {
+      showSessionNotice(`git add failed: ${result.launchError}`);
+      return;
+    }
+    if (result.exitCode !== 0) {
+      showSessionNotice(result.stderr ?? "git add failed.");
+    }
+  }, [bootstrap.repoRoot, selectedFile]);
+
+  const triggerUnstageSelectedFile = useCallback(() => {
+    const feedback = runFileGitAction({
+      file: selectedFile,
+      kind: "unstage",
+      repoRoot: bootstrap.repoRoot,
+    });
+    const result = feedback.result;
+    if (!result) {
+      return;
+    }
+    if (result.launchError) {
+      showSessionNotice(`git reset failed: ${result.launchError}`);
+      return;
+    }
+    if (result.exitCode !== 0) {
+      showSessionNotice(result.stderr ?? "git reset failed.");
+    }
+  }, [bootstrap.repoRoot, selectedFile]);
+
+  const triggerDiscardSelectedFile = useCallback(() => {
+    const feedback = runFileGitAction({
+      file: selectedFile,
+      kind: "discard",
+      repoRoot: bootstrap.repoRoot,
+    });
+    const result = feedback.result;
+    if (!result) {
+      return;
+    }
+    if (result.launchError) {
+      showSessionNotice(`git checkout failed: ${result.launchError}`);
+      return;
+    }
+    if (result.exitCode !== 0) {
+      showSessionNotice(result.stderr ?? "git checkout failed.");
+    }
+  }, [bootstrap.repoRoot, selectedFile]);
+
+  // After a git action mutates the index or worktree, refresh the diff stream so
+  // the user sees the new state instead of the pre-action snapshot. The trigger
+  // is no-op when the current input does not support reloading.
+  const triggerReloadAfterGitAction = useCallback(() => {
+    if (canRefreshCurrentInput) {
+      triggerRefreshCurrentInput();
+    }
+  }, [canRefreshCurrentInput, triggerRefreshCurrentInput]);
+
   const triggerEditSelectedFile = useCallback(() => {
     const basePath =
       bootstrap.input.kind === "vcs" ||
@@ -738,8 +911,11 @@ export function App({
   const menus = useMemo(
     () =>
       buildAppMenus({
+        canFullFileMode,
         canRefreshCurrentInput,
         focusFilter,
+        fullFileMode: fullFileOverlay.enabled,
+        gitActionsAvailable: Boolean(bootstrap.repoRoot),
         layoutMode,
         moveToAnnotatedFile,
         moveToAnnotatedHunk,
@@ -759,19 +935,28 @@ export function App({
         toggleAgentNotes,
         toggleFocusArea,
         openAgentSkill,
+        toggleFullFileMode,
         toggleHelp,
         toggleHunkHeaders,
         toggleLineNumbers,
         toggleMenuBar,
         toggleLineWrap,
         toggleSidebar,
+        triggerDiscardSelectedFile,
         triggerEditSelectedFile,
+        triggerOpenLazygit,
+        triggerReloadAfterGitAction,
+        triggerStageSelectedFile,
+        triggerUnstageSelectedFile,
         wrapLines,
       }),
     [
+      canFullFileMode,
       canRefreshCurrentInput,
       copyDecorations,
       focusFilter,
+      fullFileOverlay.enabled,
+      bootstrap.repoRoot,
       layoutMode,
       moveToAnnotatedFile,
       moveToAnnotatedHunk,
@@ -790,17 +975,22 @@ export function App({
       renderSidebar,
       toggleAgentNotes,
       toggleFocusArea,
+      toggleFullFileMode,
       toggleHelp,
       toggleHunkHeaders,
       toggleLineNumbers,
       toggleMenuBar,
       toggleLineWrap,
       toggleSidebar,
+      triggerDiscardSelectedFile,
       triggerEditSelectedFile,
+      triggerOpenLazygit,
+      triggerReloadAfterGitAction,
+      triggerStageSelectedFile,
+      triggerUnstageSelectedFile,
       wrapLines,
     ],
   );
-
   const {
     activeMenuEntries,
     activeMenuId,
@@ -856,8 +1046,16 @@ export function App({
     toggleMenuBar,
     toggleLineWrap,
     toggleSidebar,
+    triggerDiscardSelectedFile,
     triggerEditSelectedFile,
+    triggerOpenLazygit,
     triggerRefreshCurrentInput,
+    triggerReloadAfterGitAction,
+    triggerStageSelectedFile,
+    triggerUnstageSelectedFile,
+    toggleFullFileMode,
+    jumpToAdjacentFile,
+    jumpToFileByLetter,
   });
 
   /** Start a mouse drag resize for the optional sidebar. */

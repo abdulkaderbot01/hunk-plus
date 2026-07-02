@@ -130,8 +130,11 @@ describe("ui helpers", () => {
 
   test("buildAppMenus creates checked entries from the current app state", () => {
     const menus = buildAppMenus({
+      canFullFileMode: true,
       canRefreshCurrentInput: true,
       focusFilter: () => {},
+      fullFileMode: false,
+      gitActionsAvailable: true,
       layoutMode: "stack",
       moveToAnnotatedFile: () => {},
       moveToAnnotatedHunk: () => {},
@@ -156,11 +159,16 @@ describe("ui helpers", () => {
       toggleLineNumbers: () => {},
       toggleMenuBar: () => {},
       toggleLineWrap: () => {},
+      toggleFullFileMode: () => {},
       toggleSidebar: () => {},
+      triggerDiscardSelectedFile: () => {},
       triggerEditSelectedFile: () => {},
+      triggerOpenLazygit: () => {},
+      triggerReloadAfterGitAction: () => {},
+      triggerStageSelectedFile: () => {},
+      triggerUnstageSelectedFile: () => {},
       wrapLines: true,
     });
-
     expect(
       menus.file
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
@@ -202,8 +210,17 @@ describe("ui helpers", () => {
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
     ).toEqual(["Agent notes", "Agent skill", "Next annotated file", "Previous annotated file"]);
+    expect(
+      menus.git
+        .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
+        .map((entry) => entry.label),
+    ).toEqual(["Open lazygit", "Stage file", "Unstage file", "Discard worktree changes"]);
+    expect(
+      menus.view
+        .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
+        .map((entry) => entry.label),
+    ).toContain("View full file");
   });
-
   test("keyboard alias helpers normalize the shared scroll shortcut keys", () => {
     expect(isEscapeKey(createKeyEvent({ name: "escape" }))).toBe(true);
     expect(isEscapeKey(createKeyEvent({ name: "esc" }))).toBe(true);

@@ -12,7 +12,12 @@ import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } 
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
 import { normalizePatchText, stripTerminalControl } from "./patch/normalize";
-import { getConfiguredVcsAdapter, loadVcsReview, operationFromInput } from "./vcs";
+import {
+  findVcsRepoRootCandidate,
+  getConfiguredVcsAdapter,
+  loadVcsReview,
+  operationFromInput,
+} from "./vcs";
 import type {
   AppBootstrap,
   AgentContext,
@@ -426,21 +431,24 @@ export async function loadAppBootstrap(
   });
 
   let changeset: Changeset;
+  let repoRoot: string | undefined;
 
   switch (input.kind) {
     case "vcs":
     case "show":
     case "stash-show":
       changeset = await loadVcsChangeset(input, agentContext, cwd, gitExecutable);
+      // Best-effort: VCS-backed inputs always live inside a repo we can detect.
+      repoRoot = findVcsRepoRootCandidate(cwd);
       break;
     case "diff":
+    case "difftool":
       changeset = await loadFileDiffChangeset(input, agentContext, cwd);
+      // Two-file diffs may or may not be in a repo; only expose a root when one is reachable.
+      repoRoot = findVcsRepoRootCandidate(cwd);
       break;
     case "patch":
       changeset = await loadPatchChangeset(input, agentContext, cwd);
-      break;
-    case "difftool":
-      changeset = await loadFileDiffChangeset(input, agentContext, cwd);
       break;
   }
 
@@ -452,6 +460,7 @@ export async function loadAppBootstrap(
   return {
     input,
     changeset,
+    repoRoot,
     initialMode: input.options.mode ?? "auto",
     initialTheme: input.options.theme,
     customTheme,

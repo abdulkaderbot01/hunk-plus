@@ -359,6 +359,8 @@ export type ParsedCliInput =
 export interface AppBootstrap {
   input: CliInput;
   changeset: Changeset;
+  /** Resolved repo root for VCS-backed inputs, or undefined for patch/file diff inputs. */
+  repoRoot?: string;
   initialMode: LayoutMode;
   initialTheme?: string;
   initialThemeMode?: TerminalThemeMode;

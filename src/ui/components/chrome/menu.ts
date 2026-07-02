@@ -1,4 +1,4 @@
-export type MenuId = "file" | "view" | "navigate" | "agent" | "help";
+export type MenuId = "file" | "view" | "navigate" | "git" | "agent" | "help";
 
 export type MenuEntry =
   | {
@@ -23,6 +23,7 @@ const MENU_LABELS: Record<MenuId, string> = {
   file: "File",
   view: "View",
   navigate: "Navigate",
+  git: "Git",
   agent: "Agent",
   help: "Help",
 };

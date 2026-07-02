@@ -27,6 +27,8 @@ export function HelpDialog({
         ["d / u", "half page down / up"],
         ["[ / ]", "previous / next hunk"],
         [", / .", "previous / next file"],
+        ["J / K", "next / prev file (sidebar)"],
+        ["Letter", "jump to first file starting with that letter"],
         ["{ / }", "previous / next comment"],
         ["← / →", "scroll code left / right (Shift = faster)"],
         ["Home / End", "jump to top / bottom"],
@@ -46,9 +48,20 @@ export function HelpDialog({
         ["1 / 2 / 0", "split / stack / auto"],
         ["s / t", "sidebar / theme selector"],
         ["a", "toggle AI notes"],
+        ["V", "toggle view-full-file mode"],
         ["z", "toggle unchanged context"],
         ["l / w / m / M", "lines / wrap / metadata / menu"],
         ["e", "open file in $EDITOR"],
+      ],
+    },
+    {
+      title: "Git",
+      items: [
+        ["Ctrl+L", "open lazygit in repo root"],
+        ["g g", "open lazygit (alternative)"],
+        ["g s", "stage selected file"],
+        ["g u", "unstage selected file"],
+        ["g d", "discard worktree changes for selected file"],
       ],
     },
     {
@@ -62,7 +75,6 @@ export function HelpDialog({
       ],
     },
   ] as const;
-
   const width = Math.min(74, Math.max(56, terminalWidth - 8));
   const bodyWidth = Math.max(1, width - 4);
   const keyWidth = Math.min(16, Math.max(12, Math.floor(bodyWidth * 0.28)));

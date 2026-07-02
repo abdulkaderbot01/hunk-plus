@@ -15,6 +15,7 @@ import {
   isStepDownKey,
   isStepUpKey,
 } from "../lib/keyboard";
+import { extractLetterKey } from "./letterKey";
 
 type FocusArea = "files" | "filter" | "note";
 type ScrollUnit = "step" | "viewport" | "content" | "half";
@@ -51,13 +52,6 @@ function isUppercaseMKey(key: KeyEvent) {
 }
 
 export interface UseAppKeyboardShortcutsOptions {
-  activeMenuId: MenuId | null;
-  activateCurrentMenuItem: () => void;
-  canRefreshCurrentInput: boolean;
-  closeAgentSkill: () => void;
-  closeHelp: () => void;
-  closeMenu: () => void;
-  acceptThemeSelector: () => void;
   cancelDraftNote: () => void;
   closeThemeSelector: () => void;
   focusArea: FocusArea;
@@ -91,6 +85,16 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleSidebar: () => void;
   triggerEditSelectedFile: () => void;
   triggerRefreshCurrentInput: () => void;
+  // Git + full-file actions
+  triggerOpenLazygit: () => void;
+  triggerStageSelectedFile: () => void;
+  triggerUnstageSelectedFile: () => void;
+  triggerDiscardSelectedFile: () => void;
+  triggerReloadAfterGitAction: () => void;
+  toggleFullFileMode: () => void;
+  // Sidebar navigation
+  jumpToFileByLetter: (letter: string) => boolean;
+  jumpToAdjacentFile: (delta: -1 | 1) => void;
 }
 
 /** Register the app's scoped keyboard handling while keeping mode precedence explicit. */
@@ -135,6 +139,14 @@ export function useAppKeyboardShortcuts({
   toggleLineWrap,
   toggleSidebar,
   triggerRefreshCurrentInput,
+  triggerOpenLazygit,
+  triggerStageSelectedFile,
+  triggerUnstageSelectedFile,
+  triggerDiscardSelectedFile,
+  triggerReloadAfterGitAction,
+  toggleFullFileMode,
+  jumpToFileByLetter,
+  jumpToAdjacentFile,
 }: UseAppKeyboardShortcutsOptions) {
   const activeMenuIdRef = useRef(activeMenuId);
   const focusAreaRef = useRef(focusArea);
@@ -142,6 +154,11 @@ export function useAppKeyboardShortcuts({
   const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
+  // Tracks a pending "g" prefix for the git submenu shortcuts (g s / g u / g d).
+  const pendingGPrefixRef = useRef(false);
+  // Tracks a pending letter prefix for sidebar filename jumps.
+  const pendingLetterPrefixRef = useRef<{ letter: string; at: number } | null>(null);
+  const LETTER_PREFIX_TIMEOUT_MS = 1000;
 
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
@@ -393,16 +410,33 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleAppShortcut = (key: KeyEvent) => {
-    const jumpShortcut = resolveJumpShortcut(key);
-    if (jumpShortcut === "top") {
-      scrollDiff(-1, "content");
-      return;
+    // Letter prefix for sidebar file jumps. Any unmodified letter cycles through files
+    // whose display name starts with that letter; pressing the same letter again
+    // advances to the next match. The window expires after LETTER_PREFIX_TIMEOUT_MS.
+    const letterMatch = extractLetterKey(key);
+    if (letterMatch) {
+      const now = Date.now();
+      const pending = pendingLetterPrefixRef.current;
+      const sameLetter =
+        pending && pending.letter === letterMatch && now - pending.at < LETTER_PREFIX_TIMEOUT_MS;
+      pendingLetterPrefixRef.current = { letter: letterMatch, at: now };
+      const advanced = jumpToFileByLetter(letterMatch);
+      if (advanced || sameLetter) {
+        return;
+      }
+    } else {
+      // Reset the letter prefix on any non-letter keypress so the window doesn't
+      // outlive unrelated navigation.
+      pendingLetterPrefixRef.current = null;
     }
-
+    const jumpShortcut = resolveJumpShortcut(key);
     if (jumpShortcut === "bottom") {
       scrollDiff(1, "content");
       return;
     }
+    // Lowercase `g` is handled in the git-prefix block below so it can both jump-to-top
+    // AND arm the `g g` lazygit prefix. The uppercase `G` jump-to-bottom still flows
+    // through `resolveJumpShortcut`.
 
     if (key.name === "q") {
       requestQuit();
@@ -414,17 +448,93 @@ export function useAppKeyboardShortcuts({
       closeMenu();
       return;
     }
-
     if (isEscapeKey(key)) {
       requestQuit();
       return;
+    }
+
+    // Ctrl+L opens lazygit. Avoids the existing g/G jump-to-top bindings.
+    if (
+      key.ctrl &&
+      !key.shift &&
+      !key.meta &&
+      !key.option &&
+      (key.name === "l" || key.sequence === "l")
+    ) {
+      runAndCloseMenu(() => {
+        triggerOpenLazygit();
+      });
+      return;
+    }
+
+    // V (shift+v) toggles full-file view. Avoids v as a free letter for the prefix.
+    if (
+      key.shift &&
+      !key.ctrl &&
+      !key.meta &&
+      !key.option &&
+      (key.name === "v" || key.sequence === "V")
+    ) {
+      runAndCloseMenu(toggleFullFileMode);
+      return;
+    }
+
+    // J / K always step between files regardless of focus state, so users get
+    // a stable "next/prev file" binding even when the sidebar is hidden.
+    if (!key.ctrl && !key.meta && !key.option && (key.name === "J" || key.sequence === "J")) {
+      runAndCloseMenu(() => jumpToAdjacentFile(1));
+      return;
+    }
+    if (!key.ctrl && !key.meta && !key.option && (key.name === "K" || key.sequence === "K")) {
+      runAndCloseMenu(() => jumpToAdjacentFile(-1));
+      return;
+    }
+
+    // "g" prefix for git file actions: g s = stage, g u = unstage, g d = discard.
+    // The first g also performs the less-style top jump so the prefix never silently
+    // swallows the key — the user gets the jump AND arms a 1s window for the second key.
+    if (isLowercaseGKey(key)) {
+      if (pendingGPrefixRef.current) {
+        runAndCloseMenu(triggerOpenLazygit);
+        pendingGPrefixRef.current = false;
+        return;
+      }
+      scrollDiff(-1, "content");
+      pendingGPrefixRef.current = true;
+      setTimeout(() => {
+        pendingGPrefixRef.current = false;
+      }, 1000);
+      return;
+    }
+    if (pendingGPrefixRef.current) {
+      pendingGPrefixRef.current = false;
+      if (key.name === "s" || key.sequence === "s") {
+        runAndCloseMenu(() => {
+          triggerStageSelectedFile();
+          triggerReloadAfterGitAction();
+        });
+        return;
+      }
+      if (key.name === "u" || key.sequence === "u") {
+        runAndCloseMenu(() => {
+          triggerUnstageSelectedFile();
+          triggerReloadAfterGitAction();
+        });
+        return;
+      }
+      if (key.name === "d" || key.sequence === "d") {
+        runAndCloseMenu(() => {
+          triggerDiscardSelectedFile();
+          triggerReloadAfterGitAction();
+        });
+        return;
+      }
     }
 
     if (key.name === "tab") {
       toggleFocusArea();
       return;
     }
-
     if (key.name === "/") {
       focusFilter();
       return;

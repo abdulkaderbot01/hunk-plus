@@ -2322,13 +2322,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={39}
+        terminalHeight={48}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      39,
+      48,
     );
 
     const expectedRows = [
@@ -2342,6 +2342,8 @@ describe("UI components", () => {
       "d / u           half page down / up",
       "[ / ]           previous / next hunk",
       ", / .           previous / next file",
+      "J / K           next / prev file (sidebar)",
+      "Letter          jump to first file starting with that letter",
       "{ / }           previous / next comment",
       "← / →           scroll code left / right (Shift = faster)",
       "Home / End      jump to top / bottom",
@@ -2353,9 +2355,16 @@ describe("UI components", () => {
       "1 / 2 / 0       split / stack / auto",
       "s / t           sidebar / theme",
       "a               toggle AI notes",
+      "V               toggle view-full-file mode",
       "z               toggle unchanged context",
       "l / w / m / M   lines / wrap / metadata / menu",
       "e               open file in $EDITOR",
+      "Git",
+      "Ctrl+L          open lazygit in repo root",
+      "g g             open lazygit (alternative)",
+      "g s             stage selected file",
+      "g u             unstage selected file",
+      "g d             discard worktree changes for selected file",
       "Review",
       "/               focus file filter",
       "c               create review note",
@@ -2372,10 +2381,12 @@ describe("UI components", () => {
     const blankModalRow = /│\s+│/;
     const mouseHeaderIndex = lines.findIndex((line) => line.includes("│ Mouse"));
     const viewHeaderIndex = lines.findIndex((line) => line.includes("│ View"));
+    const gitHeaderIndex = lines.findIndex((line) => line.includes("│ Git"));
     const reviewHeaderIndex = lines.findIndex((line) => line.includes("│ Review"));
 
     expect(lines[mouseHeaderIndex - 1]).toMatch(blankModalRow);
     expect(lines[viewHeaderIndex - 1]).toMatch(blankModalRow);
+    expect(lines[gitHeaderIndex - 1]).toMatch(blankModalRow);
     expect(lines[reviewHeaderIndex - 1]).toMatch(blankModalRow);
     expect(frame).not.toContain("linese/Awrapt/smetadata");
     expect(frame).not.toContain("reloade/uquit");
