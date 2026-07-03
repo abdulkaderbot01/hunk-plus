@@ -20,6 +20,30 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 1
 fi
 
+# Finish the bun package's postinstall if the previous install was aborted
+# with --ignore-scripts. The `bun` npm package is a thin wrapper that downloads
+# its real binary at install time; without that step `bun build --compile`
+# fails with a confusing "Could not resolve" error.
+if [ -d "$REPO_ROOT/node_modules/bun" ]; then
+  # The `bun` npm package downloads the real binary to a platform-specific path.
+  # Linux uses bin/bun; macOS uses bin/bun (renamed); Windows uses bin/bun.exe.
+  # Treat the postinstall as needed if none of those exist or none are executable.
+  BUN_BIN_OK=0
+  for candidate in "$REPO_ROOT/node_modules/bun/bin/bun" "$REPO_ROOT/node_modules/bun/bin/bun.exe"; do
+    if [ -x "$candidate" ]; then
+      BUN_BIN_OK=1
+      break
+    fi
+  done
+  if [ "$BUN_BIN_OK" -eq 0 ]; then
+    echo "Finishing bun's postinstall (was skipped by --ignore-scripts)..."
+    (cd "$REPO_ROOT/node_modules/bun" && node install.js >/dev/null 2>&1) || {
+      echo "error: failed to finish bun's postinstall. Try: cd node_modules/bun && node install.js" >&2
+      exit 1
+    }
+  fi
+fi
+
 # Build + copy the binary to HUNK_INSTALL_DIR (defaults to ~/.local/bin).
 bun run install:bin
 
