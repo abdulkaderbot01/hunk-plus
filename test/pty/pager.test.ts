@@ -152,7 +152,7 @@ describe("PTY pager", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Git\s+Agent\s+Help/, {
         timeout: 15_000,
       });
       expect(initial).toContain("alpha.ts");

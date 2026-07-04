@@ -2,7 +2,12 @@ import type { DiffFile, LayoutMode } from "../../core/types";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { AppTheme } from "../themes";
 import { findMaxLineNumber, findMaxLineNumberInRows } from "./codeColumns";
-import { expandCollapsedRows, type FileSourceStatus } from "./expandCollapsedRows";
+import {
+  EMPTY_GAP_EXPANSIONS,
+  expandCollapsedRows,
+  type FileSourceStatus,
+  type GapExpansionMap,
+} from "./expandCollapsedRows";
 import {
   buildSplitRows,
   buildStackRows,
@@ -11,7 +16,6 @@ import {
 } from "./pierre";
 import { buildReviewRenderPlan, type PlannedReviewRow } from "./reviewRenderPlan";
 
-const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
 export interface DiffSectionRowPlan {
@@ -20,7 +24,7 @@ export interface DiffSectionRowPlan {
 }
 
 export interface BuildDiffSectionRowPlanOptions {
-  expandedKeys?: ReadonlySet<string>;
+  expandedGaps?: GapExpansionMap;
   file: DiffFile | undefined;
   highlightedDiff?: HighlightedDiffCode | null;
   layout: Exclude<LayoutMode, "auto">;
@@ -45,7 +49,7 @@ function buildBaseRows(
 
 /** Build the shared file-level diff plan consumed by rendering and geometry measurement. */
 export function buildDiffSectionRowPlan({
-  expandedKeys = EMPTY_EXPANDED_GAP_KEYS,
+  expandedGaps = EMPTY_GAP_EXPANSIONS,
   file,
   highlightedDiff = null,
   layout,
@@ -66,7 +70,7 @@ export function buildDiffSectionRowPlan({
   const expansionSide = file.metadata.type === "deleted" ? "old" : "new";
   const rows = expandCollapsedRows(baseRows, {
     layout,
-    expandedKeys,
+    expandedGaps,
     sourceLineSpans,
     sourceStatus,
     side: expansionSide,

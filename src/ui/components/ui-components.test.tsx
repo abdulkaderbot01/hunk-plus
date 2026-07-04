@@ -13,6 +13,7 @@ import {
 import { hexColorDistance } from "../lib/color";
 import { resolveTheme } from "../themes";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
+import { GAP_EXPANSION_ALL, type GapRequest } from "../diff/expandCollapsedRows";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
 
 const { AppHost } = await import("../AppHost");
@@ -1213,7 +1214,7 @@ describe("UI components", () => {
       "export const second = 2;\n",
     );
     const files = [firstFile, secondFile];
-    const expandedKeys = new Set(["trailing:0"]);
+    const expandedGaps = new Map([["trailing:0", { fromStart: GAP_EXPANSION_ALL, fromEnd: 0 }]]);
     const sourceStatus = { kind: "loaded", text: after } as const;
     const firstGeometry = measureDiffSectionGeometry(
       firstFile,
@@ -1224,7 +1225,7 @@ describe("UI components", () => {
       88,
       true,
       false,
-      expandedKeys,
+      expandedGaps,
       sourceStatus,
     );
     const secondGeometry = measureDiffSectionGeometry(secondFile, "split", true, theme, [], 88);
@@ -1236,7 +1237,7 @@ describe("UI components", () => {
     const scrollRef = createRef<ScrollBoxRenderable>();
     const props = createDiffPaneProps(files, theme, {
       diffContentWidth: 88,
-      expandedGapsByFileId: { [firstFile.id]: expandedKeys },
+      expandedGapsByFileId: { [firstFile.id]: expandedGaps },
       headerLabelWidth: 48,
       headerStatsWidth: 16,
       scrollRef,
@@ -2322,13 +2323,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={48}
+        terminalHeight={54}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      48,
+      54,
     );
 
     const expectedRows = [
@@ -2781,7 +2782,7 @@ describe("UI components", () => {
         width={120}
         selectedHunkIndex={0}
         scrollable={false}
-        onToggleGap={() => {}}
+        onGapRequest={() => {}}
       />,
       120,
       40,
@@ -2805,7 +2806,7 @@ describe("UI components", () => {
         selectedHunkIndex={0}
         scrollable={false}
         onStartUserNoteAtHunk={() => {}}
-        onToggleGap={() => {}}
+        onGapRequest={() => {}}
       />,
       { width: 120, height: 40 },
     );
@@ -2866,7 +2867,7 @@ describe("UI components", () => {
       ...expandable.file,
       sourceFetcher: createTestSourceFetcher(() => expandable.after),
     };
-    const toggledGaps: string[] = [];
+    const gapRequests: Array<{ gapKey: string; request: GapRequest }> = [];
     const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
       <PierreDiffView
@@ -2876,8 +2877,8 @@ describe("UI components", () => {
         width={120}
         selectedHunkIndex={0}
         scrollable={false}
-        onToggleGap={(gapKey) => {
-          toggledGaps.push(gapKey);
+        onGapRequest={(gapKey, request) => {
+          gapRequests.push({ gapKey, request });
         }}
       />,
       { width: 120, height: 40 },
@@ -2893,20 +2894,23 @@ describe("UI components", () => {
       expect(gapLineIndex).toBeGreaterThanOrEqual(0);
 
       for (const y of [gapLineIndex, gapLineIndex + 1]) {
-        for (const x of [2, 8, 24]) {
+        for (const x of [2, 8]) {
           await act(async () => {
             await setup.mockMouse.click(x, y);
           });
-          if (toggledGaps.length > 0) {
+          if (gapRequests.length > 0) {
             break;
           }
         }
-        if (toggledGaps.length > 0) {
+        if (gapRequests.length > 0) {
           break;
         }
       }
 
-      expect(toggledGaps).toEqual(["before:0"]);
+      // Clicking the gap label expands the whole gap, mirroring the previous
+      // one-click toggle behavior.
+      expect(gapRequests[0]?.gapKey).toBe("before:0");
+      expect(gapRequests[0]?.request).toEqual({ kind: "expand", direction: "all" });
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -2938,7 +2942,7 @@ describe("UI components", () => {
         theme={theme}
         width={140}
         selectedHunkIndex={0}
-        expandedGapKeys={new Set(["before:0"])}
+        expandedGaps={new Map([["before:0", { fromStart: GAP_EXPANSION_ALL, fromEnd: 0 }]])}
         sourceStatus={{ kind: "loaded", text: after }}
         scrollable={false}
       />,
@@ -3156,7 +3160,7 @@ describe("UI components", () => {
     const bootstrap = createBootstrap();
     const frame = await captureFrame(<AppHost bootstrap={bootstrap} />, 280, 24);
 
-    expect(frame).toContain("File  View  Navigate  Agent  Help");
+    expect(frame).toContain("File  View  Navigate  Git  Agent  Help");
     expect(frame).toContain("alpha.ts");
     expect(frame).toContain("beta.ts");
     expect(frame).toContain("@@ -1,1 +1,2 @@");

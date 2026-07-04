@@ -36,8 +36,8 @@ import type {
   SessionLiveCommentSummary,
   SessionReviewNoteSummary,
 } from "../../hunk-session/types";
-import type { FileSourceStatus } from "../diff/expandCollapsedRows";
-import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
+import type { FileSourceStatus, GapExpansionMap, GapRequest } from "../diff/expandCollapsedRows";
+import { applyGapRequest, selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
 import { findNextHunkCursor } from "../lib/hunks";
 import { reviewNoteSource } from "../lib/agentAnnotations";
@@ -127,7 +127,7 @@ export interface ReviewSelectionOptions {
 
 export interface ReviewController {
   allFiles: DiffFile[];
-  expandedGapsByFileId: Record<string, ReadonlySet<string>>;
+  expandedGapsByFileId: Record<string, GapExpansionMap>;
   filter: string;
   draftNote: DraftReviewNote | null;
   liveCommentCount: number;
@@ -149,6 +149,7 @@ export interface ReviewController {
   selectedHunkIndex: number;
   sidebarEntries: ReviewState["sidebarEntries"];
   sourceStatusByFileId: Record<string, FileSourceStatus>;
+  requestGapExpansion: (fileId: string, gapKey: string, request: GapRequest) => void;
   toggleGap: (fileId: string, gapKey: string) => void;
   toggleSelectedHunkGap: () => void;
   visibleFiles: DiffFile[];
@@ -196,9 +197,9 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   );
   const [userNotesByFileId, setUserNotesByFileId] = useState<Record<string, UserReviewNote[]>>({});
   const [draftNote, setDraftNote] = useState<DraftReviewNote | null>(null);
-  const [expandedGapsByFileId, setExpandedGapsByFileId] = useState<
-    Record<string, ReadonlySet<string>>
-  >({});
+  const [expandedGapsByFileId, setExpandedGapsByFileId] = useState<Record<string, GapExpansionMap>>(
+    {},
+  );
   const [sourceStatusByFileId, setSourceStatusByFileId] = useState<
     Record<string, FileSourceStatus>
   >({});
@@ -422,9 +423,9 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     setFilter("");
   }, []);
 
-  /** Toggle expansion of one collapsed gap and lazily load source when needed. */
-  const toggleGap = useCallback(
-    (fileId: string, gapKey: string) => {
+  /** Apply one expand/collapse request to a collapsed gap and lazily load source when needed. */
+  const requestGapExpansion = useCallback(
+    (fileId: string, gapKey: string, request: GapRequest) => {
       const file = allFiles.find((entry) => entry.id === fileId);
       if (!file?.sourceFetcher) {
         return;
@@ -432,14 +433,19 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
       setExpandedGapsByFileId((prev) => {
         const current = prev[fileId];
-        const next = new Set(current ?? []);
-        if (next.has(gapKey)) {
+        const next = new Map(current ?? []);
+        const applied = applyGapRequest(next.get(gapKey), request);
+        if (applied === null) {
           next.delete(gapKey);
         } else {
-          next.add(gapKey);
+          next.set(gapKey, applied);
         }
         return { ...prev, [fileId]: next };
       });
+
+      if (request.kind !== "expand") {
+        return;
+      }
 
       // The fetcher caches its own resolved text; we mirror it into React state
       // as a tagged status so the UI can distinguish loading, loaded, and error
@@ -451,13 +457,13 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       }
 
       const side = file.metadata.type === "deleted" ? "old" : "new";
-      const request = {
+      const loadRequest = {
         fetcher: file.sourceFetcher,
         requestId: nextSourceLoadRequestIdRef.current,
         side,
       } satisfies SourceLoadRequest;
       nextSourceLoadRequestIdRef.current += 1;
-      sourceLoadRequestsRef.current.set(fileId, request);
+      sourceLoadRequestsRef.current.set(fileId, loadRequest);
 
       const loadingStatus = { kind: "loading" } satisfies FileSourceStatus;
       sourceStatusRef.current = { ...sourceStatusRef.current, [fileId]: loadingStatus };
@@ -466,9 +472,9 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       const isCurrentRequest = () => {
         const current = sourceLoadRequestsRef.current.get(fileId);
         return (
-          current?.requestId === request.requestId &&
-          current.fetcher === request.fetcher &&
-          current.side === request.side
+          current?.requestId === loadRequest.requestId &&
+          current.fetcher === loadRequest.fetcher &&
+          current.side === loadRequest.side
         );
       };
 
@@ -513,6 +519,19 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         });
     },
     [allFiles],
+  );
+
+  /** Toggle one gap between fully expanded and collapsed (keyboard and row-click policy). */
+  const toggleGap = useCallback(
+    (fileId: string, gapKey: string) => {
+      const expanded = Boolean(expandedGapsByFileId[fileId]?.has(gapKey));
+      requestGapExpansion(
+        fileId,
+        gapKey,
+        expanded ? { kind: "collapse" } : { kind: "expand", direction: "all" },
+      );
+    },
+    [expandedGapsByFileId, requestGapExpansion],
   );
 
   /** Toggle the collapsed gap nearest to the current hunk selection. */
@@ -1006,6 +1025,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     selectedHunkIndex,
     sidebarEntries,
     sourceStatusByFileId,
+    requestGapExpansion,
     toggleGap,
     toggleSelectedHunkGap,
     visibleFiles,

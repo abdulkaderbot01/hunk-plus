@@ -19,7 +19,12 @@ import type {
   LayoutMode,
   UserNoteLineTarget,
 } from "../../../core/types";
-import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
+import {
+  EMPTY_GAP_EXPANSIONS,
+  type FileSourceStatus,
+  type GapExpansionMap,
+  type GapRequest,
+} from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { DraftReviewNote } from "../../hooks/useReviewController";
 import {
@@ -166,10 +171,9 @@ function buildHighlightPrefetchFileIds({
   return next;
 }
 
-const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
-const EMPTY_EXPANDED_GAPS_BY_FILE_ID: Record<string, ReadonlySet<string>> = {};
+const EMPTY_EXPANDED_GAPS_BY_FILE_ID: Record<string, GapExpansionMap> = {};
 const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
-const NOOP_TOGGLE_GAP = () => {};
+const NOOP_GAP_REQUEST = () => {};
 
 /** Render the main multi-file review stream. */
 export function DiffPane({
@@ -217,12 +221,12 @@ export function DiffPane({
   onCopySelectionText,
   onScrollCodeHorizontally = () => {},
   onSelectFile,
-  onToggleGap = NOOP_TOGGLE_GAP,
+  onGapRequest = NOOP_GAP_REQUEST,
   onViewportCenteredHunkChange,
 }: {
   codeHorizontalOffset?: number;
   diffContentWidth: number;
-  expandedGapsByFileId?: Record<string, ReadonlySet<string>>;
+  expandedGapsByFileId?: Record<string, GapExpansionMap>;
   files: DiffFile[];
   headerLabelWidth: number;
   headerStatsWidth: number;
@@ -266,7 +270,7 @@ export function DiffPane({
   onCopySelectionText?: (text: string) => void | boolean;
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
-  onToggleGap?: (fileId: string, gapKey: string) => void;
+  onGapRequest?: (fileId: string, gapKey: string, request: GapRequest) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
 }) {
   const renderTopChrome = showTopChrome ?? !pagerMode;
@@ -658,7 +662,7 @@ export function DiffPane({
           diffContentWidth,
           showLineNumbers,
           wrapLines,
-          expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
+          expandedGapsByFileId[file.id] ?? EMPTY_GAP_EXPANSIONS,
           sourceStatusByFileId[file.id],
           reserveAddNoteColumn,
         ),
@@ -736,7 +740,7 @@ export function DiffPane({
           diffContentWidth,
           showLineNumbers,
           wrapLines,
-          expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
+          expandedGapsByFileId[file.id] ?? EMPTY_GAP_EXPANSIONS,
           sourceStatusByFileId[file.id],
           reserveAddNoteColumn,
         );
@@ -1810,7 +1814,7 @@ export function DiffPane({
                     <DiffSection
                       key={file.id}
                       codeHorizontalOffset={codeHorizontalOffset}
-                      expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
+                      expandedGaps={expandedGapsByFileId[file.id] ?? EMPTY_GAP_EXPANSIONS}
                       file={file}
                       headerLabelWidth={headerLabelWidth}
                       headerStatsWidth={headerStatsWidth}
@@ -1848,7 +1852,7 @@ export function DiffPane({
                         reserveAddNoteColumn ? startUserNoteAtHunkCallback(file.id) : undefined
                       }
                       onSelect={selectFileCallback(file.id)}
-                      onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
+                      onGapRequest={(gapKey, request) => onGapRequest(file.id, gapKey, request)}
                     />
                   );
                 })}

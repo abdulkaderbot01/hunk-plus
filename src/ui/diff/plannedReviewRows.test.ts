@@ -48,6 +48,8 @@ function collapsedRow(key: string, hunkIndex: number): PlannedReviewRow {
       position: "before",
       oldRange: [1, 1],
       newRange: [1, 1],
+      hiddenLines: 1,
+      gapState: "collapsed",
     },
   };
 }

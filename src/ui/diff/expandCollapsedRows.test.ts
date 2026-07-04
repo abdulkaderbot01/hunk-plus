@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { expandCollapsedRows, gapKey, selectGapForKeyboardToggle } from "./expandCollapsedRows";
+import {
+  applyGapRequest,
+  expandCollapsedRows,
+  GAP_EXPANSION_ALL,
+  GAP_EXPANSION_STEP,
+  gapKey,
+  seamlessGapExpansionsForFile,
+  selectGapForKeyboardToggle,
+  type GapExpansion,
+} from "./expandCollapsedRows";
 import type { DiffRow } from "./pierre";
 
 function makeCollapsedRow(
@@ -17,7 +26,17 @@ function makeCollapsedRow(
     position,
     oldRange,
     newRange,
+    hiddenLines: oldRange[1] - oldRange[0] + 1,
+    gapState: "collapsed",
   };
+}
+
+/** Fully expanded entry for one gap, mirroring the "expand all" request. */
+function fullExpansion(key: string, seamless = false): [string, GapExpansion] {
+  return [
+    key,
+    { fromStart: GAP_EXPANSION_ALL, fromEnd: 0, ...(seamless ? { seamless: true } : {}) },
+  ];
 }
 
 function makeHunkHeader(hunkIndex: number): Extract<DiffRow, { type: "hunk-header" }> {
@@ -51,7 +70,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set(),
+      expandedGaps: new Map(),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
@@ -64,7 +83,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: undefined,
       side: "new",
     });
@@ -83,7 +102,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "loading" },
       side: "new",
     });
@@ -101,7 +120,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "error" },
       side: "new",
     });
@@ -119,7 +138,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "error", reason: "too-large" },
       side: "new",
     });
@@ -136,7 +155,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
@@ -172,7 +191,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
@@ -195,7 +214,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
@@ -212,7 +231,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("trailing", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("trailing", 0))]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
@@ -231,7 +250,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "old",
     });
@@ -253,7 +272,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "loaded", text: sourceWithCrlf },
       side: "new",
     });
@@ -271,7 +290,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "loaded", text: sourceWithControls },
       side: "new",
     });
@@ -294,7 +313,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "loaded", text: sourceWithTab },
       side: "new",
     });
@@ -312,7 +331,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       sourceLineSpans: (line, sourceLineNumber) => {
         calls.push({ line, sourceLineNumber });
@@ -338,7 +357,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "loaded", text: "alpha\n" },
       side: "new",
     });
@@ -357,7 +376,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0))]),
       sourceStatus: { kind: "loaded", text: "alpha\n" },
       side: "old",
     });
@@ -368,6 +387,189 @@ describe("expandCollapsedRows", () => {
       throw new Error("expected first row to be collapsed");
     }
     expect(collapsed.text.toLowerCase()).toContain("could not load");
+  });
+});
+
+describe("expandCollapsedRows partial expansion", () => {
+  test("reveals lines from the top edge and keeps a collapsed row for the rest", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 5], [1, 5]), makeHunkHeader(0)];
+
+    const result = expandCollapsedRows(rows, {
+      layout: "stack",
+      expandedGaps: new Map([[gapKey("before", 0), { fromStart: 2, fromEnd: 0 }]]),
+      sourceStatus: { kind: "loaded", text: SOURCE },
+      side: "new",
+    });
+
+    expect(result.map((row) => row.type)).toEqual([
+      "stack-line",
+      "stack-line",
+      "collapsed",
+      "hunk-header",
+    ]);
+
+    const [first, second] = result;
+    if (first?.type !== "stack-line" || second?.type !== "stack-line") {
+      throw new Error("expected two revealed context rows before the collapsed row");
+    }
+    expect(first.cell.spans[0]?.text).toBe("alpha");
+    expect(second.cell.spans[0]?.text).toBe("beta");
+
+    const collapsed = result[2];
+    if (collapsed?.type !== "collapsed") {
+      throw new Error("expected a collapsed remainder row");
+    }
+    expect(collapsed.text).toContain("3 unchanged lines");
+    expect(collapsed.hiddenLines).toBe(3);
+    expect(collapsed.gapState).toBe("collapsed");
+    expect(collapsed.oldRange).toEqual([3, 5]);
+    expect(collapsed.newRange).toEqual([3, 5]);
+  });
+
+  test("reveals lines from the bottom edge above the following hunk", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 5], [1, 5]), makeHunkHeader(0)];
+
+    const result = expandCollapsedRows(rows, {
+      layout: "stack",
+      expandedGaps: new Map([[gapKey("before", 0), { fromStart: 0, fromEnd: 2 }]]),
+      sourceStatus: { kind: "loaded", text: SOURCE },
+      side: "new",
+    });
+
+    expect(result.map((row) => row.type)).toEqual([
+      "collapsed",
+      "stack-line",
+      "stack-line",
+      "hunk-header",
+    ]);
+
+    const collapsed = result[0];
+    if (collapsed?.type !== "collapsed") {
+      throw new Error("expected the collapsed remainder row first");
+    }
+    expect(collapsed.hiddenLines).toBe(3);
+
+    const [, first, second] = result;
+    if (first?.type !== "stack-line" || second?.type !== "stack-line") {
+      throw new Error("expected two revealed context rows after the collapsed row");
+    }
+    expect(first.cell.spans[0]?.text).toBe("delta");
+    expect(first.cell.newLineNumber).toBe(4);
+    expect(second.cell.spans[0]?.text).toBe("epsilon");
+  });
+
+  test("treats overlapping edge expansions as fully expanded without duplicating lines", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 3], [1, 3]), makeHunkHeader(0)];
+
+    const result = expandCollapsedRows(rows, {
+      layout: "stack",
+      expandedGaps: new Map([[gapKey("before", 0), { fromStart: 2, fromEnd: 2 }]]),
+      sourceStatus: { kind: "loaded", text: SOURCE },
+      side: "new",
+    });
+
+    expect(result.map((row) => row.type)).toEqual([
+      "collapsed",
+      "stack-line",
+      "stack-line",
+      "stack-line",
+      "hunk-header",
+    ]);
+    const collapsed = result[0];
+    if (collapsed?.type !== "collapsed") {
+      throw new Error("expected the expanded status row first");
+    }
+    expect(collapsed.gapState).toBe("expanded");
+    expect(collapsed.hiddenLines).toBe(0);
+    expect(collapsed.text.toLowerCase()).toContain("hide");
+  });
+
+  test("seamless full expansion omits the gap status row entirely", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 3], [1, 3]), makeHunkHeader(0)];
+
+    const result = expandCollapsedRows(rows, {
+      layout: "stack",
+      expandedGaps: new Map([fullExpansion(gapKey("before", 0), true)]),
+      sourceStatus: { kind: "loaded", text: SOURCE },
+      side: "new",
+    });
+
+    expect(result.map((row) => row.type)).toEqual([
+      "stack-line",
+      "stack-line",
+      "stack-line",
+      "hunk-header",
+    ]);
+  });
+});
+
+describe("applyGapRequest", () => {
+  test("expanding down grows the top edge by one step", () => {
+    expect(applyGapRequest(undefined, { kind: "expand", direction: "down" })).toEqual({
+      fromStart: GAP_EXPANSION_STEP,
+      fromEnd: 0,
+    });
+    expect(
+      applyGapRequest({ fromStart: 5, fromEnd: 3 }, { kind: "expand", direction: "down" }),
+    ).toEqual({ fromStart: 5 + GAP_EXPANSION_STEP, fromEnd: 3 });
+  });
+
+  test("expanding up grows the bottom edge by one step", () => {
+    expect(applyGapRequest(undefined, { kind: "expand", direction: "up" })).toEqual({
+      fromStart: 0,
+      fromEnd: GAP_EXPANSION_STEP,
+    });
+  });
+
+  test("expanding all covers the whole gap regardless of prior state", () => {
+    expect(
+      applyGapRequest({ fromStart: 5, fromEnd: 3 }, { kind: "expand", direction: "all" }),
+    ).toEqual({ fromStart: GAP_EXPANSION_ALL, fromEnd: 0 });
+  });
+
+  test("collapse resets the gap to its collapsed state", () => {
+    expect(applyGapRequest({ fromStart: 5, fromEnd: 3 }, { kind: "collapse" })).toBeNull();
+  });
+});
+
+describe("seamlessGapExpansionsForFile", () => {
+  test("covers every leading gap and the trailing gap seamlessly", () => {
+    const metadata = {
+      isPartial: false,
+      additionLines: Array.from({ length: 30 }, () => ""),
+      deletionLines: Array.from({ length: 30 }, () => ""),
+      hunks: [
+        {
+          collapsedBefore: 4,
+          additionStart: 5,
+          additionCount: 3,
+          additionLineIndex: 4,
+          deletionStart: 5,
+          deletionCount: 3,
+          deletionLineIndex: 4,
+        },
+        {
+          collapsedBefore: 10,
+          additionStart: 18,
+          additionCount: 2,
+          additionLineIndex: 17,
+          deletionStart: 18,
+          deletionCount: 2,
+          deletionLineIndex: 17,
+        },
+      ],
+    } as unknown as Parameters<typeof seamlessGapExpansionsForFile>[0];
+
+    const expansions = seamlessGapExpansionsForFile(metadata);
+    expect([...expansions.keys()].sort()).toEqual([
+      gapKey("before", 0),
+      gapKey("before", 1),
+      gapKey("trailing", 1),
+    ]);
+    for (const expansion of expansions.values()) {
+      expect(expansion.seamless).toBe(true);
+      expect(expansion.fromStart).toBe(GAP_EXPANSION_ALL);
+    }
   });
 });
 

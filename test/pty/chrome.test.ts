@@ -25,7 +25,9 @@ describe("PTY chrome", () => {
         "--agent-notes",
       ],
       cols: 140,
-      rows: 20,
+      // Tall enough that the controls-help dialog renders without scrolling,
+      // so the "g / G" row assertion can see the whole Navigation section.
+      rows: 50,
     });
 
     try {
@@ -86,7 +88,7 @@ describe("PTY chrome", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Git\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -121,7 +123,7 @@ describe("PTY chrome", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Git\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -164,7 +166,7 @@ describe("PTY chrome", () => {
     });
 
     try {
-      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+      await session.waitForText(/View\s+Navigate\s+Git\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -194,7 +196,7 @@ describe("PTY chrome", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Git\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -235,7 +237,7 @@ describe("PTY chrome", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Git\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 

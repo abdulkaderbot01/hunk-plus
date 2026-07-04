@@ -81,13 +81,21 @@ describe("ui helpers", () => {
   test("buildMenuSpecs lays out the fixed top-level order", () => {
     const specs = buildMenuSpecs();
 
-    expect(specs.map((spec) => spec.id)).toEqual(["file", "view", "navigate", "agent", "help"]);
+    expect(specs.map((spec) => spec.id)).toEqual([
+      "file",
+      "view",
+      "navigate",
+      "git",
+      "agent",
+      "help",
+    ]);
     expect(specs).toMatchObject([
       { id: "file", left: 1, width: 6, label: "File" },
       { id: "view", left: 7, width: 6, label: "View" },
       { id: "navigate", left: 13, width: 10, label: "Navigate" },
-      { id: "agent", left: 23, width: 7, label: "Agent" },
-      { id: "help", left: 30, width: 6, label: "Help" },
+      { id: "git", left: 23, width: 5, label: "Git" },
+      { id: "agent", left: 28, width: 7, label: "Agent" },
+      { id: "help", left: 35, width: 6, label: "Help" },
     ]);
   });
 

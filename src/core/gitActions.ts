@@ -123,7 +123,7 @@ export async function resolveOptionalRepoRoot(
 ): Promise<string | null> {
   // `resolveGitRepoRoot` throws on missing repos; convert that to a soft null so
   // callers can decide whether to surface the absence.
-  const probe: VcsDiffCommandInput = { kind: "vcs", options: {} };
+  const probe: VcsDiffCommandInput = { kind: "vcs", staged: false, options: {} };
   try {
     return await resolveGitRepoRoot(probe, { cwd: startPath, gitExecutable });
   } catch {

@@ -7,7 +7,12 @@ import type { CopySelectedRowRange } from "../components/panes/copySelection";
 import type { DiffSectionGeometry } from "./diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
-import { type FileSourceStatus } from "./expandCollapsedRows";
+import {
+  EMPTY_GAP_EXPANSIONS,
+  type FileSourceStatus,
+  type GapExpansionMap,
+  type GapRequest,
+} from "./expandCollapsedRows";
 import { spansForHighlightedSourceLine, type DiffRow } from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildDiffSectionRowPlan } from "./diffSectionRowPlan";
@@ -17,7 +22,6 @@ import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
-const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const ADD_NOTE_IDLE_HIDE_DELAY_MS = 2000;
 
 export interface ActiveAddNoteAffordance {
@@ -62,13 +66,13 @@ export function PierreDiffView({
   codeHorizontalOffset = 0,
   copySelectedRowRanges,
   copySelectedSide,
-  expandedGapKeys = EMPTY_EXPANDED_GAP_KEYS,
+  expandedGaps = EMPTY_GAP_EXPANSIONS,
   file,
   layout,
   onHover,
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
-  onToggleGap,
+  onGapRequest,
   showLineNumbers = true,
   showHunkHeaders = true,
   sourceStatus,
@@ -87,13 +91,13 @@ export function PierreDiffView({
   codeHorizontalOffset?: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
-  expandedGapKeys?: ReadonlySet<string>;
+  expandedGaps?: GapExpansionMap;
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
   onHover?: () => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
-  onToggleGap?: (gapKey: string) => void;
+  onGapRequest?: (gapKey: string, request: GapRequest) => void;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
   sourceStatus?: FileSourceStatus | undefined;
@@ -123,8 +127,8 @@ export function PierreDiffView({
   onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
   const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
   onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
-  const onToggleGapRef = useRef(onToggleGap);
-  onToggleGapRef.current = onToggleGap;
+  const onGapRequestRef = useRef(onGapRequest);
+  onGapRequestRef.current = onGapRequest;
 
   const clearHoverIdleTimeout = useCallback(() => {
     if (hoverIdleTimeoutRef.current) {
@@ -184,12 +188,12 @@ export function PierreDiffView({
     shouldLoadHighlight,
   });
   const sourceTextForHighlight =
-    sourceStatus?.kind === "loaded" && expandedGapKeys.size > 0 ? sourceStatus.text : undefined;
+    sourceStatus?.kind === "loaded" && expandedGaps.size > 0 ? sourceStatus.text : undefined;
   const resolvedHighlightedSource = useHighlightedSource({
     file,
     text: sourceTextForHighlight,
     theme,
-    shouldLoadHighlight: shouldLoadHighlight && expandedGapKeys.size > 0,
+    shouldLoadHighlight: shouldLoadHighlight && expandedGaps.size > 0,
   });
   const sourceLineSpans = useCallback(
     (line: string | undefined, sourceLineNumber: number) =>
@@ -204,7 +208,7 @@ export function PierreDiffView({
   const sectionRowPlan = useMemo(
     () =>
       buildDiffSectionRowPlan({
-        expandedKeys: expandedGapKeys,
+        expandedGaps,
         file,
         highlightedDiff: resolvedHighlighted,
         layout,
@@ -215,7 +219,7 @@ export function PierreDiffView({
         visibleAgentNotes,
       }),
     [
-      expandedGapKeys,
+      expandedGaps,
       file,
       layout,
       resolvedHighlighted,
@@ -232,8 +236,11 @@ export function PierreDiffView({
 
   // Stable wrappers around the unstable upstream handlers. Presence/absence still mirrors the
   // incoming props so rows keep hiding affordances when the handlers are not provided.
-  const stableToggleGap = useCallback((gapKey: string) => onToggleGapRef.current?.(gapKey), []);
-  const gapToggleHandler = fileHasSourceFetcher && onToggleGap ? stableToggleGap : undefined;
+  const stableGapRequest = useCallback(
+    (gapKey: string, request: GapRequest) => onGapRequestRef.current?.(gapKey, request),
+    [],
+  );
+  const gapRequestHandler = fileHasSourceFetcher && onGapRequest ? stableGapRequest : undefined;
   const stableStartUserNoteAtHunk = useCallback(
     (hunkIndex: number, target?: UserNoteLineTarget) =>
       onStartUserNoteAtHunkRef.current?.(hunkIndex, target),
@@ -388,7 +395,7 @@ export function PierreDiffView({
               }
               onHoverRow={handleHoverRow}
               onStartUserNoteAtHunk={startUserNoteAtHunkHandler}
-              onToggleGap={gapToggleHandler}
+              onGapRequest={gapRequestHandler}
             />
           </box>
         );

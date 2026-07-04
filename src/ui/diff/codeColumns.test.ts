@@ -57,6 +57,8 @@ describe("findMaxLineNumberInRows", () => {
         newRange: [6, 1000],
         position: "trailing",
         text: "995 unchanged lines",
+        hiddenLines: 995,
+        gapState: "collapsed",
       },
     ];
 

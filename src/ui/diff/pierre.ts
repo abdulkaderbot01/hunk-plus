@@ -131,6 +131,12 @@ export interface StackLineCell {
 
 export type CollapsedGapPosition = "before" | "trailing";
 
+/**
+ * Interaction state of one gap row. "collapsed" rows offer expand affordances,
+ * "expanded" rows offer collapse, and "loading"/"error" report source fetching.
+ */
+export type CollapsedGapState = "collapsed" | "expanded" | "loading" | "error";
+
 export type DiffRow =
   | {
       type: "collapsed";
@@ -145,6 +151,9 @@ export type DiffRow =
       // uses these to slice the file contents that fill the gap.
       oldRange: [number, number];
       newRange: [number, number];
+      // Unchanged lines still hidden behind this row after any partial expansion.
+      hiddenLines: number;
+      gapState: CollapsedGapState;
     }
   | {
       type: "hunk-header";
@@ -521,7 +530,8 @@ function makeStackCell(
 }
 
 /** Describe one collapsed unchanged region in the diff stream. */
-function collapsedRowText(lines: number) {
+/** Label for a gap row that still hides the given number of unchanged lines. */
+export function collapsedRowText(lines: number) {
   return `${lines} unchanged ${lines === 1 ? "line" : "lines"}`;
 }
 
@@ -788,6 +798,8 @@ export function buildSplitRows(
         text: collapsedRowText(hunk.collapsedBefore),
         position: "before",
         ...leadingCollapsedRanges(hunk),
+        hiddenLines: hunk.collapsedBefore,
+        gapState: "collapsed",
       });
     }
 
@@ -888,6 +900,8 @@ export function buildSplitRows(
       text: collapsedRowText(trailingLines),
       position: "trailing",
       ...trailingCollapsedRanges(lastHunk, trailingLines),
+      hiddenLines: trailingLines,
+      gapState: "collapsed",
     });
   }
 
@@ -914,6 +928,8 @@ export function buildStackRows(
         text: collapsedRowText(hunk.collapsedBefore),
         position: "before",
         ...leadingCollapsedRanges(hunk),
+        hiddenLines: hunk.collapsedBefore,
+        gapState: "collapsed",
       });
     }
 
@@ -1010,6 +1026,8 @@ export function buildStackRows(
       text: collapsedRowText(trailingLines),
       position: "trailing",
       ...trailingCollapsedRanges(lastHunk, trailingLines),
+      hiddenLines: trailingLines,
+      gapState: "collapsed",
     });
   }
 

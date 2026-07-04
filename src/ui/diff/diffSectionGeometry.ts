@@ -6,15 +6,17 @@ import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
 import { findMaxLineNumber } from "./codeColumns";
 import { buildDiffSectionRowPlan, type DiffSectionRowPlan } from "./diffSectionRowPlan";
-import { type FileSourceStatus } from "./expandCollapsedRows";
+import {
+  EMPTY_GAP_EXPANSIONS,
+  type FileSourceStatus,
+  type GapExpansionMap,
+} from "./expandCollapsedRows";
 import {
   plannedReviewRowContributesToHunkBounds,
   type PlannedHunkBounds,
 } from "./plannedReviewRows";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 import { measureRenderedRowHeight } from "./renderRows";
-
-const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 
 export interface DiffSectionRowBounds extends VerticalBounds {
   key: string;
@@ -75,14 +77,20 @@ function notesCacheKey(visibleAgentNotes: VisibleAgentNote[]) {
 
 /** Stable suffix that captures expansion state for the geometry cache key. */
 function expansionCacheKey(
-  expandedKeys: ReadonlySet<string>,
+  expandedGaps: GapExpansionMap,
   sourceStatus: FileSourceStatus | undefined,
 ) {
-  if (expandedKeys.size === 0) {
+  if (expandedGaps.size === 0) {
     return "";
   }
 
-  const sortedKeys = [...expandedKeys].sort().join(",");
+  const sortedKeys = [...expandedGaps.entries()]
+    .map(
+      ([key, expansion]) =>
+        `${key}=${expansion.fromStart}.${expansion.fromEnd}${expansion.seamless ? ".s" : ""}`,
+    )
+    .sort()
+    .join(",");
   const statusKey =
     sourceStatus === undefined
       ? "pending"
@@ -216,7 +224,7 @@ export function measureDiffSectionGeometry(
   width = 0,
   showLineNumbers = true,
   wrapLines = false,
-  expandedKeys: ReadonlySet<string> = EMPTY_EXPANDED_GAP_KEYS,
+  expandedGaps: GapExpansionMap = EMPTY_GAP_EXPANSIONS,
   sourceStatus: FileSourceStatus | undefined = undefined,
   reserveAddNoteColumn = false,
 ): DiffSectionGeometry {
@@ -247,7 +255,7 @@ export function measureDiffSectionGeometry(
     theme.lineNumberBg,
     theme.lineNumberFg,
   ].join(":");
-  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${themeCacheKey}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}${expansionCacheKey(expandedKeys, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
+  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${themeCacheKey}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}${expansionCacheKey(expandedGaps, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
   const cacheSlot = sectionGeometryCacheSlot(visibleAgentNotes);
   const cached = getCachedSectionGeometry(file, cacheSlot, cacheKey);
   if (cached) {
@@ -255,7 +263,7 @@ export function measureDiffSectionGeometry(
   }
 
   const sectionRowPlan = buildDiffSectionRowPlan({
-    expandedKeys,
+    expandedGaps,
     file,
     layout,
     showHunkHeaders,

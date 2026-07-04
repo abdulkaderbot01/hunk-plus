@@ -55,6 +55,7 @@
     "stage:prebuilt:release": "bun run build:npm && bun run ./scripts/stage-prebuilt-npm.ts --artifact-root ./dist/release/artifacts",
     "install:bin": "bun run ./scripts/install-bin.ts",
     "build:install": "bash ./scripts/build-and-install.sh",
+    "typecheck": "tsc --noEmit",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint . --deny-warnings",

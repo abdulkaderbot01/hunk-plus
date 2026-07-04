@@ -736,7 +736,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      expect(frame).toContain("File  View  Navigate  Agent  Help");
+      expect(frame).toContain("File  View  Navigate  Git  Agent  Help");
 
       await act(async () => {
         await setup.mockInput.pressKey("m", { shift: true });
@@ -744,7 +744,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       frame = setup.captureCharFrame();
-      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+      expect(frame).not.toContain("File  View  Navigate  Git  Agent  Help");
       expect(firstNonEmptyLine(frame)).not.toContain("─");
 
       await act(async () => {
@@ -754,7 +754,7 @@ describe("App interactions", () => {
         nextFrame.includes("Toggle files/filter focus"),
       );
       expect(frame).toContain("Toggle files/filter focus");
-      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+      expect(frame).not.toContain("File  View  Navigate  Git  Agent  Help");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -775,7 +775,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+      expect(frame).not.toContain("File  View  Navigate  Git  Agent  Help");
       expect(firstNonEmptyLine(frame)).not.toContain("─");
 
       await act(async () => {
@@ -785,7 +785,7 @@ describe("App interactions", () => {
         nextFrame.includes("Toggle files/filter focus"),
       );
       expect(frame).toContain("Toggle files/filter focus");
-      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+      expect(frame).not.toContain("File  View  Navigate  Git  Agent  Help");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1815,7 +1815,7 @@ describe("App interactions", () => {
       });
       await waitForFrame(setup, (frame) => frame.includes("Toggle files/filter focus"), 12);
 
-      for (let index = 0; index < 3; index += 1) {
+      for (let index = 0; index < 4; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("right");
         });
@@ -2909,7 +2909,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+      expect(frame).not.toContain("File  View  Navigate  Git  Agent  Help");
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
 
       await act(async () => {
@@ -2918,7 +2918,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       frame = setup.captureCharFrame();
-      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+      expect(frame).not.toContain("File  View  Navigate  Git  Agent  Help");
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
 
       await act(async () => {

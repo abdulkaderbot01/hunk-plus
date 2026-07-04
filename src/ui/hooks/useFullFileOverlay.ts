@@ -7,9 +7,14 @@
  * could not attach one) keep their original hunk-only diff.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SourceTextTooLargeError } from "../../core/fileSource";
 import type { DiffFile } from "../../core/types";
+import {
+  type FileSourceStatus,
+  type GapExpansionMap,
+  seamlessGapExpansionsForFile,
+} from "../diff/expandCollapsedRows";
 import { buildFullFileDiff } from "../lib/fullFilePatch";
 
 export type FullFileStatus = "loading" | "ready" | "unavailable" | "too-large";
@@ -18,6 +23,11 @@ export interface FullFileEntry {
   status: FullFileStatus;
   /** Full-file diff. Undefined while loading or when the source is unavailable. */
   file: DiffFile | undefined;
+  /**
+   * Source text for the side gap expansion reads from (old for deleted files,
+   * new otherwise). Ready entries use it to render every gap pre-expanded.
+   */
+  sourceText: string | null;
   /** Diagnostic message when `status` is `unavailable` or `too-large`. */
   message: string | null;
 }
@@ -61,6 +71,7 @@ async function buildEntryForFile(file: DiffFile): Promise<FullFileEntry> {
     return {
       status: "unavailable",
       file: undefined,
+      sourceText: null,
       message: "Full file view unavailable: no source fetcher.",
     };
   }
@@ -74,6 +85,7 @@ async function buildEntryForFile(file: DiffFile): Promise<FullFileEntry> {
     return {
       status: "too-large",
       file: undefined,
+      sourceText: null,
       message: oldResult.error ?? newResult.error,
     };
   }
@@ -82,6 +94,7 @@ async function buildEntryForFile(file: DiffFile): Promise<FullFileEntry> {
     return {
       status: "unavailable",
       file: undefined,
+      sourceText: null,
       message: oldResult.error ?? newResult.error,
     };
   }
@@ -97,6 +110,9 @@ async function buildEntryForFile(file: DiffFile): Promise<FullFileEntry> {
   return {
     status: "ready",
     file: { ...file, metadata, patch },
+    // Gap expansion reads the deleted side's text for deleted files and the
+    // new side's text otherwise; mirror that policy here.
+    sourceText: metadata.type === "deleted" ? oldResult.text : newResult.text,
     message: null,
   };
 }
@@ -131,6 +147,7 @@ export function useFullFileOverlay(files: DiffFile[]): FullFileOverlay {
           next[file.id] = {
             status: "loading",
             file: undefined,
+            sourceText: null,
             message: null,
           };
         }
@@ -159,7 +176,12 @@ export function useFullFileOverlay(files: DiffFile[]): FullFileOverlay {
     };
   }, [enabled, files]);
 
-  return { enabled, byFileId, setEnabled };
+  // Memoize the overlay object so downstream memos keyed on it (e.g. the
+  // effective file list fed to the review controller) stay referentially
+  // stable across unrelated renders. Without this, applyFullFileOverlay
+  // produces a fresh files array every render while enabled, which retriggers
+  // render-time file-snapshot reconciliation forever (infinite render loop).
+  return useMemo(() => ({ enabled, byFileId, setEnabled }), [enabled, byFileId]);
 }
 
 /**
@@ -171,4 +193,47 @@ export function applyFullFileOverlay(files: DiffFile[], overlay: FullFileOverlay
     return files;
   }
   return files.map((file) => overlay.byFileId[file.id]?.file ?? file);
+}
+
+/**
+ * Overlay seamless full expansions for every ready full-file entry so those
+ * files render as one continuous listing. Files without a ready entry keep
+ * their interactive per-gap expansion state.
+ */
+export function applyFullFileExpansions(
+  overlay: FullFileOverlay,
+  expandedGapsByFileId: Record<string, GapExpansionMap>,
+): Record<string, GapExpansionMap> {
+  if (!overlay.enabled) {
+    return expandedGapsByFileId;
+  }
+
+  const next = { ...expandedGapsByFileId };
+  for (const [fileId, entry] of Object.entries(overlay.byFileId)) {
+    if (entry.status === "ready" && entry.file) {
+      next[fileId] = seamlessGapExpansionsForFile(entry.file.metadata);
+    }
+  }
+  return next;
+}
+
+/**
+ * Overlay loaded source statuses for ready full-file entries so their
+ * pre-expanded gaps can fill immediately from the already-fetched text.
+ */
+export function applyFullFileSourceStatus(
+  overlay: FullFileOverlay,
+  sourceStatusByFileId: Record<string, FileSourceStatus>,
+): Record<string, FileSourceStatus> {
+  if (!overlay.enabled) {
+    return sourceStatusByFileId;
+  }
+
+  const next = { ...sourceStatusByFileId };
+  for (const [fileId, entry] of Object.entries(overlay.byFileId)) {
+    if (entry.status === "ready" && entry.sourceText !== null) {
+      next[fileId] = { kind: "loaded", text: entry.sourceText };
+    }
+  }
+  return next;
 }

@@ -20,7 +20,12 @@ import {
 } from "./diff/codeColumns";
 import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
-import { applyFullFileOverlay, useFullFileOverlay } from "./hooks/useFullFileOverlay";
+import {
+  applyFullFileExpansions,
+  applyFullFileOverlay,
+  applyFullFileSourceStatus,
+  useFullFileOverlay,
+} from "./hooks/useFullFileOverlay";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController } from "./hooks/useReviewController";
@@ -205,6 +210,17 @@ export function App({
     fullFileOverlay.setEnabled(!fullFileOverlay.enabled);
   }, [canFullFileMode, fullFileOverlay]);
   const review = useReviewController({ files: effectiveFiles });
+  // Full-file mode renders every ready file as one continuous listing: all
+  // gaps pre-expanded (seamlessly, without interactive gap rows) and fed by
+  // the source text the overlay already fetched.
+  const effectiveExpandedGapsByFileId = useMemo(
+    () => applyFullFileExpansions(fullFileOverlay, review.expandedGapsByFileId),
+    [fullFileOverlay, review.expandedGapsByFileId],
+  );
+  const effectiveSourceStatusByFileId = useMemo(
+    () => applyFullFileSourceStatus(fullFileOverlay, review.sourceStatusByFileId),
+    [fullFileOverlay, review.sourceStatusByFileId],
+  );
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
@@ -1203,7 +1219,7 @@ export function App({
           codeHorizontalOffset={codeHorizontalOffset}
           copyDecorations={copyDecorations}
           diffContentWidth={diffContentWidth}
-          expandedGapsByFileId={review.expandedGapsByFileId}
+          expandedGapsByFileId={effectiveExpandedGapsByFileId}
           files={filteredFiles}
           pagerMode={pagerMode}
           screenLeft={diffPaneScreenLeft}
@@ -1222,7 +1238,7 @@ export function App({
           showAgentNotes={showAgentNotes}
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
-          sourceStatusByFileId={review.sourceStatusByFileId}
+          sourceStatusByFileId={effectiveSourceStatusByFileId}
           wrapLines={wrapLines}
           wrapToggleScrollTop={wrapToggleScrollTopRef.current}
           layoutToggleScrollTop={layoutToggleScrollTopRef.current}
@@ -1244,7 +1260,7 @@ export function App({
           }}
           onCopyFeedback={showTransientNotice}
           onSelectFile={jumpToFile}
-          onToggleGap={review.toggleGap}
+          onGapRequest={review.requestGapExpansion}
           onViewportCenteredHunkChange={(fileId, hunkIndex) =>
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
           }

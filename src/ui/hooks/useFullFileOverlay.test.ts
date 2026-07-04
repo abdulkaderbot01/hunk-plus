@@ -34,7 +34,9 @@ describe("applyFullFileOverlay", () => {
     const overlayFile = { ...file, patch: "overlay" };
     const result = applyFullFileOverlay(
       [file],
-      overlay(true, { a: { status: "ready", file: overlayFile, message: null } }),
+      overlay(true, {
+        a: { status: "ready", file: overlayFile, sourceText: "alpha\n", message: null },
+      }),
     );
     expect(result).toEqual([overlayFile]);
   });
@@ -43,7 +45,7 @@ describe("applyFullFileOverlay", () => {
     const file = createTestDiffFile({ id: "a", path: "a.ts" });
     const result = applyFullFileOverlay(
       [file],
-      overlay(true, { a: { status: "loading", file: undefined, message: null } }),
+      overlay(true, { a: { status: "loading", file: undefined, sourceText: null, message: null } }),
     );
     expect(result).toEqual([file]);
   });

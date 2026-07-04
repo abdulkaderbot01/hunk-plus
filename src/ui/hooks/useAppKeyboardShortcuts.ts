@@ -52,7 +52,14 @@ function isUppercaseMKey(key: KeyEvent) {
 }
 
 export interface UseAppKeyboardShortcutsOptions {
+  acceptThemeSelector: () => void;
+  activateCurrentMenuItem: () => void;
+  activeMenuId: MenuId | null;
+  canRefreshCurrentInput: boolean;
   cancelDraftNote: () => void;
+  closeAgentSkill: () => void;
+  closeHelp: () => void;
+  closeMenu: () => void;
   closeThemeSelector: () => void;
   focusArea: FocusArea;
   focusFilter: () => void;
@@ -410,25 +417,6 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleAppShortcut = (key: KeyEvent) => {
-    // Letter prefix for sidebar file jumps. Any unmodified letter cycles through files
-    // whose display name starts with that letter; pressing the same letter again
-    // advances to the next match. The window expires after LETTER_PREFIX_TIMEOUT_MS.
-    const letterMatch = extractLetterKey(key);
-    if (letterMatch) {
-      const now = Date.now();
-      const pending = pendingLetterPrefixRef.current;
-      const sameLetter =
-        pending && pending.letter === letterMatch && now - pending.at < LETTER_PREFIX_TIMEOUT_MS;
-      pendingLetterPrefixRef.current = { letter: letterMatch, at: now };
-      const advanced = jumpToFileByLetter(letterMatch);
-      if (advanced || sameLetter) {
-        return;
-      }
-    } else {
-      // Reset the letter prefix on any non-letter keypress so the window doesn't
-      // outlive unrelated navigation.
-      pendingLetterPrefixRef.current = null;
-    }
     const jumpShortcut = resolveJumpShortcut(key);
     if (jumpShortcut === "bottom") {
       scrollDiff(1, "content");
@@ -687,6 +675,28 @@ export function useAppKeyboardShortcuts({
 
     if (key.sequence === "}") {
       runAndCloseMenu(() => moveToAnnotatedHunk(1));
+      return;
+    }
+
+    // Letter prefix for sidebar file jumps, as the lowest-precedence fallback so
+    // reserved single-letter shortcuts (a, s, t, w, z, …) keep their bindings.
+    // Any remaining unmodified letter cycles through files whose display name
+    // starts with that letter; pressing the same letter again advances to the
+    // next match. The window expires after LETTER_PREFIX_TIMEOUT_MS.
+    const letterMatch = extractLetterKey(key);
+    if (letterMatch) {
+      const now = Date.now();
+      const pending = pendingLetterPrefixRef.current;
+      const sameLetter =
+        pending && pending.letter === letterMatch && now - pending.at < LETTER_PREFIX_TIMEOUT_MS;
+      pendingLetterPrefixRef.current = { letter: letterMatch, at: now };
+      if (!jumpToFileByLetter(letterMatch) && !sameLetter) {
+        pendingLetterPrefixRef.current = null;
+      }
+    } else {
+      // Reset the letter prefix on any non-letter keypress so the window doesn't
+      // outlive unrelated navigation.
+      pendingLetterPrefixRef.current = null;
     }
   };
 

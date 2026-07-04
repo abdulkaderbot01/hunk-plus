@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +17,10 @@ function git(cwd: string, ...args: string[]) {
     );
   }
 }
+
+// Each test cold-starts the CLI via `bun run`, which can exceed bun's default
+// 5s test timeout when the whole suite runs in parallel on a loaded machine.
+setDefaultTimeout(30_000);
 
 describe("CLI entrypoint contracts", () => {
   test("bare hunk prints standard help without terminal takeover sequences", () => {

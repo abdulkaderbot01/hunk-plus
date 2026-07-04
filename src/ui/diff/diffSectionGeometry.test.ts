@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import { measureDiffSectionGeometry } from "./diffSectionGeometry";
+import { GAP_EXPANSION_ALL, type GapExpansion } from "./expandCollapsedRows";
 import { resolveTheme } from "../themes";
 import {
   createTestDiffFile,
@@ -252,7 +253,9 @@ describe("measureDiffSectionGeometry", () => {
       0,
       true,
       false,
-      new Set(["trailing:0"]),
+      new Map([
+        ["trailing:0", { fromStart: GAP_EXPANSION_ALL, fromEnd: 0 } satisfies GapExpansion],
+      ]),
       { kind: "loaded", text: after },
     );
 
@@ -303,7 +306,7 @@ describe("measureDiffSectionGeometry", () => {
       0,
       true,
       false,
-      new Set(["before:0"]),
+      new Map([["before:0", { fromStart: GAP_EXPANSION_ALL, fromEnd: 0 } satisfies GapExpansion]]),
       { kind: "loaded", text: after },
     );
 
@@ -339,7 +342,9 @@ describe("measureDiffSectionGeometry", () => {
       id: "large-expanded-gutter",
       path: "large-expanded-gutter.txt",
     });
-    const expandedKeys = new Set(["trailing:0"]);
+    const expandedGaps = new Map([
+      ["trailing:0", { fromStart: GAP_EXPANSION_ALL, fromEnd: 0 } satisfies GapExpansion],
+    ]);
     const sourceStatus = { kind: "loaded", text: after } as const;
 
     const nowrapGeometry = measureDiffSectionGeometry(
@@ -351,7 +356,7 @@ describe("measureDiffSectionGeometry", () => {
       20,
       true,
       false,
-      expandedKeys,
+      expandedGaps,
       sourceStatus,
     );
     const wrappedGeometry = measureDiffSectionGeometry(
@@ -363,7 +368,7 @@ describe("measureDiffSectionGeometry", () => {
       20,
       true,
       true,
-      expandedKeys,
+      expandedGaps,
       sourceStatus,
     );
 
@@ -390,7 +395,9 @@ describe("measureDiffSectionGeometry", () => {
         },
       },
     ];
-    const expandedKeys = new Set(["trailing:0"]);
+    const expandedGaps = new Map([
+      ["trailing:0", { fromStart: GAP_EXPANSION_ALL, fromEnd: 0 } satisfies GapExpansion],
+    ]);
     const shortSourceLines = [...afterLines];
     const longSourceLines = [...afterLines];
     const shortLine = "short";
@@ -412,7 +419,7 @@ describe("measureDiffSectionGeometry", () => {
       24,
       true,
       true,
-      expandedKeys,
+      expandedGaps,
       { kind: "loaded", text: shortSource },
     );
     const longGeometry = measureDiffSectionGeometry(
@@ -424,7 +431,7 @@ describe("measureDiffSectionGeometry", () => {
       24,
       true,
       true,
-      expandedKeys,
+      expandedGaps,
       { kind: "loaded", text: longSource },
     );
 

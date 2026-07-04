@@ -7,6 +7,8 @@ import type {
   SplitLineCell,
   StackLineCell,
 } from "./pierre";
+import { collapsedRowText, trailingCollapsedLines } from "./pierre";
+import type { DiffFile } from "../../core/types";
 
 export type ExpansionLayout = "split" | "stack";
 
@@ -16,9 +18,94 @@ export type FileSourceStatus =
   | { kind: "loaded"; text: string }
   | { kind: "error"; reason?: "too-large" };
 
+/**
+ * How much of one collapsed gap is revealed, measured in lines from each edge.
+ * `fromStart` reveals lines directly below the hunk above the gap; `fromEnd`
+ * reveals lines directly above the hunk below it. When the two regions meet,
+ * the gap renders fully expanded.
+ */
+export interface GapExpansion {
+  fromStart: number;
+  fromEnd: number;
+  /**
+   * Seamless gaps render their revealed lines without the interactive status
+   * row, so the file reads as one continuous listing (full-file view).
+   */
+  seamless?: boolean;
+}
+
+export type GapExpansionMap = ReadonlyMap<string, GapExpansion>;
+
+/** Lines revealed per directional expand step, mirroring IDE diff viewers. */
+export const GAP_EXPANSION_STEP = 20;
+
+/** Line count that always covers a whole gap regardless of its size. */
+export const GAP_EXPANSION_ALL = Number.MAX_SAFE_INTEGER;
+
+export const EMPTY_GAP_EXPANSIONS: GapExpansionMap = new Map();
+
+/** One collapsed-gap affordance action requested from the UI. */
+export type GapRequest =
+  | { kind: "expand"; direction: "down" | "up" | "all" }
+  | { kind: "collapse" };
+
+/**
+ * Apply one gap request to the current expansion of a gap. Returns the next
+ * expansion, or `null` when the gap should return to its collapsed state.
+ */
+export function applyGapRequest(
+  current: GapExpansion | undefined,
+  request: GapRequest,
+): GapExpansion | null {
+  if (request.kind === "collapse") {
+    return null;
+  }
+
+  const base = current ?? { fromStart: 0, fromEnd: 0 };
+  switch (request.direction) {
+    case "down":
+      return {
+        ...base,
+        fromStart: Math.min(GAP_EXPANSION_ALL, base.fromStart + GAP_EXPANSION_STEP),
+      };
+    case "up":
+      return { ...base, fromEnd: Math.min(GAP_EXPANSION_ALL, base.fromEnd + GAP_EXPANSION_STEP) };
+    case "all":
+      return { fromStart: GAP_EXPANSION_ALL, fromEnd: 0 };
+  }
+}
+
+/**
+ * Build a seamless full expansion for every gap in one file. Used by the
+ * full-file view to render the whole file as one continuous listing without
+ * interactive gap rows.
+ */
+export function seamlessGapExpansionsForFile(metadata: DiffFile["metadata"]): GapExpansionMap {
+  const expansions = new Map<string, GapExpansion>();
+  for (const [hunkIndex, hunk] of metadata.hunks.entries()) {
+    if (hunk.collapsedBefore > 0) {
+      expansions.set(gapKey("before", hunkIndex), {
+        fromStart: GAP_EXPANSION_ALL,
+        fromEnd: 0,
+        seamless: true,
+      });
+    }
+  }
+
+  if (trailingCollapsedLines(metadata) > 0) {
+    expansions.set(gapKey("trailing", metadata.hunks.length - 1), {
+      fromStart: GAP_EXPANSION_ALL,
+      fromEnd: 0,
+      seamless: true,
+    });
+  }
+
+  return expansions;
+}
+
 export interface ExpandCollapsedRowsOptions {
   layout: ExpansionLayout;
-  expandedKeys: ReadonlySet<string>;
+  expandedGaps: GapExpansionMap;
   sourceStatus: FileSourceStatus | undefined;
   /** Optional syntax-aware span resolver for a zero-based source line. */
   sourceLineSpans?: (line: string | undefined, sourceLineNumber: number) => RenderSpan[];
@@ -145,18 +232,19 @@ function buildStackContextRow(
 
 /**
  * Replace each expanded collapsed row with the actual unchanged file lines it
- * represents. The original collapsed row stays in place as a status row, and
- * synthesized context rows follow it when source has loaded. When source is
- * still loading or failed, only the row label changes so the user sees the
- * state of the request.
+ * represents. Partial expansions reveal lines from either edge of the gap and
+ * keep a collapsed status row for the remainder; full expansions replace the
+ * whole gap (keeping a "Hide" status row unless the expansion is seamless).
+ * When source is still loading or failed, only the row label changes so the
+ * user sees the state of the request.
  */
 export function expandCollapsedRows(
   rows: DiffRow[],
   options: ExpandCollapsedRowsOptions,
 ): DiffRow[] {
-  const { layout, expandedKeys, sourceLineSpans, sourceStatus, side = "new" } = options;
+  const { layout, expandedGaps, sourceLineSpans, sourceStatus, side = "new" } = options;
 
-  if (expandedKeys.size === 0) {
+  if (expandedGaps.size === 0) {
     return rows;
   }
 
@@ -170,7 +258,8 @@ export function expandCollapsedRows(
     }
 
     const key = gapKey(row.position, row.hunkIndex);
-    if (!expandedKeys.has(key)) {
+    const expansion = expandedGaps.get(key);
+    if (!expansion) {
       result.push(row);
       continue;
     }
@@ -179,17 +268,21 @@ export function expandCollapsedRows(
     const lineCount = Math.max(0, range[1] - range[0] + 1);
 
     if (sourceStatus?.kind === "loading") {
-      result.push({ ...row, text: loadingRowText(lineCount) });
+      result.push({ ...row, text: loadingRowText(lineCount), gapState: "loading" });
       continue;
     }
 
     if (sourceStatus?.kind === "error") {
-      result.push({ ...row, text: errorRowText(lineCount, sourceStatus.reason) });
+      result.push({
+        ...row,
+        text: errorRowText(lineCount, sourceStatus.reason),
+        gapState: "error",
+      });
       continue;
     }
 
     if (sourceStatus === undefined) {
-      // expandedKeys can briefly contain a key before the controller's load
+      // expandedGaps can briefly contain a key before the controller's load
       // status is committed; keep the original label until status arrives.
       result.push(row);
       continue;
@@ -203,21 +296,16 @@ export function expandCollapsedRows(
         sourceEndIndex < sourceStartIndex ||
         sourceEndIndex >= sourceLines.length)
     ) {
-      result.push({ ...row, text: errorRowText(lineCount) });
+      result.push({ ...row, text: errorRowText(lineCount), gapState: "error" });
       continue;
     }
 
-    result.push({
-      ...row,
-      text: expandedRowText(lineCount),
-    });
-
-    for (let offset = 0; offset < lineCount; offset += 1) {
+    const pushContextRow = (offset: number) => {
       const oldLineNumber = row.oldRange[0] + offset;
       const newLineNumber = row.newRange[0] + offset;
       const sourceLineNumber = (side === "old" ? oldLineNumber : newLineNumber) - 1;
       if (sourceLineNumber < 0 || sourceLineNumber >= sourceLines.length) {
-        break;
+        return false;
       }
 
       const text = sourceLines[sourceLineNumber];
@@ -246,6 +334,51 @@ export function expandCollapsedRows(
               spans,
             ),
       );
+      return true;
+    };
+
+    // Clamp the requested edges into the gap so overlapping or oversized
+    // expansions degrade into "fully expanded" instead of duplicating lines.
+    const fromStart = Math.min(Math.max(0, expansion.fromStart), lineCount);
+    const fromEnd = Math.min(Math.max(0, expansion.fromEnd), lineCount - fromStart);
+    const remaining = lineCount - fromStart - fromEnd;
+
+    if (remaining <= 0) {
+      if (!expansion.seamless) {
+        result.push({
+          ...row,
+          text: expandedRowText(lineCount),
+          hiddenLines: 0,
+          gapState: "expanded",
+        });
+      }
+      for (let offset = 0; offset < lineCount; offset += 1) {
+        if (!pushContextRow(offset)) {
+          break;
+        }
+      }
+      continue;
+    }
+
+    for (let offset = 0; offset < fromStart; offset += 1) {
+      if (!pushContextRow(offset)) {
+        break;
+      }
+    }
+
+    result.push({
+      ...row,
+      text: collapsedRowText(remaining),
+      oldRange: [row.oldRange[0] + fromStart, row.oldRange[1] - fromEnd],
+      newRange: [row.newRange[0] + fromStart, row.newRange[1] - fromEnd],
+      hiddenLines: remaining,
+      gapState: "collapsed",
+    });
+
+    for (let offset = lineCount - fromEnd; offset < lineCount; offset += 1) {
+      if (!pushContextRow(offset)) {
+        break;
+      }
     }
   }
 

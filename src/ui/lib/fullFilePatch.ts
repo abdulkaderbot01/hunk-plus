@@ -7,7 +7,7 @@
  * expects.
  */
 
-import { createTwoFilesPatch, type JsonPatchOptions } from "diff";
+import { createTwoFilesPatch, type CreatePatchOptionsNonabortable } from "diff";
 import { parseDiffFromFile, type FileContents, type FileDiffMetadata } from "@pierre/diffs";
 
 export interface BuildFullFileDiffOptions {
@@ -70,12 +70,25 @@ function buildPatch({
 }: BuildFullFileDiffOptions): string {
   const oldName = previousPath ?? path;
   const newName = path;
-  // `diff` writes `--- oldName` / `+++ newName` headers; emit `/dev/null` for missing sides
-  // so Pierre can classify new vs deleted files correctly.
-  const fromName = oldText === null ? "/dev/null" : oldName;
-  const toName = newText === null ? "/dev/null" : newName;
-  const options: JsonPatchOptions = { context };
-  return createTwoFilesPatch(fromName, toName, pad(oldText), pad(newText), "", "", options);
+  // Emit git-style `a/`+`b/` headers with `/dev/null` for missing sides so patch
+  // consumers (and Pierre) classify new vs deleted files correctly.
+  const fromLabel = oldText === null ? "/dev/null" : `a/${oldName}`;
+  const toLabel = newText === null ? "/dev/null" : `b/${newName}`;
+  const options: CreatePatchOptionsNonabortable = { context };
+  const unified = createTwoFilesPatch(
+    fromLabel,
+    toLabel,
+    pad(oldText),
+    pad(newText),
+    "",
+    "",
+    options,
+  );
+  // `diff` prepends an `Index:`/`===` banner; replace it with a git-style
+  // `diff --git` line so the patch reads like real git output.
+  const headerStart = unified.indexOf("--- ");
+  const body = headerStart >= 0 ? unified.slice(headerStart) : unified;
+  return `diff --git a/${oldName} b/${newName}\n${body}`;
 }
 
 /** Build a `parseDiffFromFile`-shaped metadata + unified diff patch for one full file. */
